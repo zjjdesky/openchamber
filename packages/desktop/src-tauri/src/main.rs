@@ -46,7 +46,7 @@ use commands::logs::fetch_desktop_logs;
 
 use commands::github::{
     github_auth_complete, github_auth_disconnect, github_auth_start, github_auth_status, github_me,
-    github_pr_create, github_pr_merge, github_pr_status,
+    github_pr_create, github_pr_merge, github_pr_ready, github_pr_status,
 };
 use commands::notifications::desktop_notify;
 use commands::permissions::{
@@ -905,6 +905,7 @@ fn main() {
             github_pr_status,
             github_pr_create,
             github_pr_merge,
+            github_pr_ready,
         ])
         .on_menu_event(|app, event| {
             #[cfg(target_os = "macos")]

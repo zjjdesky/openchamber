@@ -546,6 +546,15 @@ export type GitHubPullRequestMergeInput = {
   method: 'merge' | 'squash' | 'rebase';
 };
 
+export type GitHubPullRequestReadyInput = {
+  directory: string;
+  number: number;
+};
+
+export type GitHubPullRequestReadyResult = {
+  ready: boolean;
+};
+
 export type GitHubPullRequestMergeResult = {
   merged: boolean;
   message?: string;
@@ -581,6 +590,7 @@ export interface GitHubAPI {
   prStatus(directory: string, branch: string): Promise<GitHubPullRequestStatus>;
   prCreate(payload: GitHubPullRequestCreateInput): Promise<GitHubPullRequest>;
   prMerge(payload: GitHubPullRequestMergeInput): Promise<GitHubPullRequestMergeResult>;
+  prReady(payload: GitHubPullRequestReadyInput): Promise<GitHubPullRequestReadyResult>;
 }
 
 export interface RuntimeAPIs {

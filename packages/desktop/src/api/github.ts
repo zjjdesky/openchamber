@@ -5,6 +5,8 @@ import type {
   GitHubPullRequestCreateInput,
   GitHubPullRequestMergeInput,
   GitHubPullRequestMergeResult,
+  GitHubPullRequestReadyInput,
+  GitHubPullRequestReadyResult,
   GitHubPullRequestStatus,
   GitHubDeviceFlowComplete,
   GitHubDeviceFlowStart,
@@ -51,5 +53,10 @@ export const createDesktopGitHubAPI = (): GitHubAPI => ({
   async prMerge(payload: GitHubPullRequestMergeInput): Promise<GitHubPullRequestMergeResult> {
     const { safeInvoke } = await import('../lib/tauriCallbackManager');
     return safeInvoke<GitHubPullRequestMergeResult>('github_pr_merge', payload, { timeout: 20000 });
+  },
+
+  async prReady(payload: GitHubPullRequestReadyInput): Promise<GitHubPullRequestReadyResult> {
+    const { safeInvoke } = await import('../lib/tauriCallbackManager');
+    return safeInvoke<GitHubPullRequestReadyResult>('github_pr_ready', payload, { timeout: 20000 });
   },
 });

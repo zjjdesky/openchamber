@@ -85,6 +85,7 @@ export const PullRequestSection: React.FC<{
   const [isGenerating, setIsGenerating] = React.useState(false);
   const [isCreating, setIsCreating] = React.useState(false);
   const [isMerging, setIsMerging] = React.useState(false);
+  const [isMarkingReady, setIsMarkingReady] = React.useState(false);
 
   const canShow = Boolean(directory && branch && baseBranch && branch !== baseBranch);
 
@@ -200,6 +201,27 @@ export const PullRequestSection: React.FC<{
     }
   }, [directory, github, mergeMethod, refresh]);
 
+  const markReady = React.useCallback(async (pr: GitHubPullRequest) => {
+    if (!github?.prReady) {
+      toast.error('GitHub runtime API unavailable');
+      return;
+    }
+    setIsMarkingReady(true);
+    try {
+      await github.prReady({ directory, number: pr.number });
+      toast.success('Marked ready for review');
+      await refresh();
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      toast.error('Failed to mark ready', { description: message });
+      if (pr.url) {
+        void openExternal(pr.url);
+      }
+    } finally {
+      setIsMarkingReady(false);
+    }
+  }, [directory, github, refresh]);
+
   if (!canShow) {
     return null;
   }
@@ -269,6 +291,11 @@ export const PullRequestSection: React.FC<{
                       {pr.mergeable === false ? ' · not mergeable' : ''}
                       {typeof pr.mergeableState === 'string' && pr.mergeableState ? ` · ${pr.mergeableState}` : ''}
                     </div>
+                    {canMerge && pr.draft ? (
+                      <div className="typography-micro text-muted-foreground">
+                        Draft PRs must be marked ready before merge.
+                      </div>
+                    ) : null}
                     {!canMerge ? (
                       <div className="typography-micro text-muted-foreground">No merge permission; use Open in GitHub.</div>
                     ) : null}
@@ -281,6 +308,17 @@ export const PullRequestSection: React.FC<{
                         Open
                       </a>
                     </Button>
+                    {canMerge && pr.draft && pr.state === 'open' ? (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => markReady(pr)}
+                        disabled={isMarkingReady || isMerging}
+                      >
+                        {isMarkingReady ? <RiLoader4Line className="size-4 animate-spin" /> : null}
+                        Ready
+                      </Button>
+                    ) : null}
                     {canMerge ? (
                       <>
                         <select
@@ -296,7 +334,7 @@ export const PullRequestSection: React.FC<{
                         <Button
                           size="sm"
                           onClick={() => mergePr(pr)}
-                          disabled={isMerging || pr.state !== 'open'}
+                          disabled={isMerging || isMarkingReady || pr.state !== 'open' || pr.draft}
                         >
                           {isMerging ? <RiLoader4Line className="size-4 animate-spin" /> : null}
                           Merge
@@ -344,11 +382,26 @@ export const PullRequestSection: React.FC<{
                   />
                 </label>
 
-                <label className="flex items-center gap-2 cursor-pointer">
+                <div
+                  className="flex items-center gap-2 cursor-pointer"
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={draft}
+                  onClick={() => setDraft((v) => !v)}
+                  onKeyDown={(e) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                      e.preventDefault();
+                      setDraft((v) => !v);
+                    }
+                  }}
+                >
                   <button
                     type="button"
-                    onClick={() => setDraft((v) => !v)}
-                    aria-pressed={draft}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDraft((v) => !v);
+                    }}
                     aria-label="Toggle draft PR"
                     className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                   >
@@ -359,7 +412,7 @@ export const PullRequestSection: React.FC<{
                     )}
                   </button>
                   <span className="typography-ui-label text-foreground select-none">Draft</span>
-                </label>
+                </div>
 
                 <div className="flex items-center gap-2">
                   <Button

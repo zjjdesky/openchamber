@@ -25,6 +25,7 @@ import {
 import {
   createPullRequest,
   getPullRequestStatus,
+  markPullRequestReady,
   mergePullRequest,
 } from './githubPr';
 
@@ -1143,6 +1144,29 @@ export async function handleBridgeMessage(message: BridgeRequest, ctx?: BridgeCo
           return { id, type, success: true, data: result };
         } catch (error: unknown) {
           const message = error instanceof Error ? error.message : String(error);
+          return { id, type, success: false, error: message };
+        }
+      }
+
+      case 'api:github/pr:ready': {
+        const context = ctx?.context;
+        if (!context) return { id, type, success: false, error: 'Missing VS Code context' };
+        const stored = await readGitHubAuth(context);
+        if (!stored?.accessToken) return { id, type, success: false, error: 'GitHub not connected' };
+        const directory = readStringField(payload, 'directory');
+        const number = readNumberField(payload, 'number') ?? 0;
+        if (!directory || !number) {
+          return { id, type, success: false, error: 'directory and number are required' };
+        }
+        try {
+          const result = await markPullRequestReady(stored.accessToken, directory, number);
+          return { id, type, success: true, data: result };
+        } catch (error: unknown) {
+          const status = (error && typeof error === 'object' && 'status' in error) ? (error as { status?: number }).status : undefined;
+          const message = error instanceof Error ? error.message : String(error);
+          if (status === 401 || message === 'unauthorized') {
+            await clearGitHubAuth(context);
+          }
           return { id, type, success: false, error: message };
         }
       }

@@ -4267,6 +4267,55 @@ async function main(options = {}) {
     }
   });
 
+  app.post('/api/github/pr/ready', async (req, res) => {
+    try {
+      const directory = typeof req.body?.directory === 'string' ? req.body.directory.trim() : '';
+      const number = typeof req.body?.number === 'number' ? req.body.number : null;
+      if (!directory || !number) {
+        return res.status(400).json({ error: 'directory and number are required' });
+      }
+
+      const { getOctokitOrNull } = await getGitHubLibraries();
+      const octokit = getOctokitOrNull();
+      if (!octokit) {
+        return res.status(401).json({ error: 'GitHub not connected' });
+      }
+
+      const { resolveGitHubRepoFromDirectory } = await import('./lib/github-repo.js');
+      const { repo } = await resolveGitHubRepoFromDirectory(directory);
+      if (!repo) {
+        return res.status(400).json({ error: 'Unable to resolve GitHub repo from git remote' });
+      }
+
+      const pr = await octokit.rest.pulls.get({ owner: repo.owner, repo: repo.repo, pull_number: number });
+      const nodeId = pr?.data?.node_id;
+      if (!nodeId) {
+        return res.status(500).json({ error: 'Failed to resolve PR node id' });
+      }
+
+      if (pr?.data?.draft === false) {
+        return res.json({ ready: true });
+      }
+
+      try {
+        await octokit.graphql(
+          `mutation($pullRequestId: ID!) {\n  markPullRequestReadyForReview(input: { pullRequestId: $pullRequestId }) {\n    pullRequest {\n      id\n      isDraft\n    }\n  }\n}`,
+          { pullRequestId: nodeId }
+        );
+      } catch (error) {
+        if (error?.status === 403) {
+          return res.status(403).json({ error: 'Not authorized to mark PR ready' });
+        }
+        throw error;
+      }
+
+      return res.json({ ready: true });
+    } catch (error) {
+      console.error('Failed to mark PR ready:', error);
+      return res.status(500).json({ error: error.message || 'Failed to mark PR ready' });
+    }
+  });
+
   app.get('/api/provider/:providerId/source', async (req, res) => {
     try {
       const { providerId } = req.params;

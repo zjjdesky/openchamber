@@ -5,6 +5,8 @@ import type {
   GitHubPullRequestCreateInput,
   GitHubPullRequestMergeInput,
   GitHubPullRequestMergeResult,
+  GitHubPullRequestReadyInput,
+  GitHubPullRequestReadyResult,
   GitHubPullRequestStatus,
   GitHubDeviceFlowComplete,
   GitHubDeviceFlowStart,
@@ -103,6 +105,19 @@ export const createWebGitHubAPI = (): GitHubAPI => ({
     const body = await jsonOrNull<GitHubPullRequestMergeResult & { error?: string }>(response);
     if (!response.ok || !body) {
       throw new Error((body as { error?: string } | null)?.error || response.statusText || 'Failed to merge PR');
+    }
+    return body;
+  },
+
+  async prReady(payload: GitHubPullRequestReadyInput): Promise<GitHubPullRequestReadyResult> {
+    const response = await fetch('/api/github/pr/ready', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const body = await jsonOrNull<GitHubPullRequestReadyResult & { error?: string }>(response);
+    if (!response.ok || !body) {
+      throw new Error((body as { error?: string } | null)?.error || response.statusText || 'Failed to mark PR ready');
     }
     return body;
   },

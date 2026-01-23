@@ -12,6 +12,7 @@ const ACCESS_TOKEN_URL: &str = "https://github.com/login/oauth/access_token";
 const API_USER_URL: &str = "https://api.github.com/user";
 const API_EMAILS_URL: &str = "https://api.github.com/user/emails";
 const API_PULLS_URL_PREFIX: &str = "https://api.github.com/repos";
+const API_GRAPHQL_URL: &str = "https://api.github.com/graphql";
 const DEVICE_GRANT_TYPE: &str = "urn:ietf:params:oauth:grant-type:device_code";
 
 const DEFAULT_GITHUB_CLIENT_ID: &str = "Ov23liNd8TxDcMXtAHHM";
@@ -75,6 +76,12 @@ pub struct GitHubPullRequestMergeResult {
     merged: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     message: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct GitHubPullRequestReadyResult {
+    ready: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -232,6 +239,8 @@ struct PullDetailsResponse {
     mergeable_state: Option<String>,
     head: PullRef,
     base: PullBaseRef,
+    #[serde(default)]
+    node_id: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -1055,4 +1064,80 @@ pub async fn github_pr_merge(
         merged: parsed.merged,
         message: parsed.message,
     })
+}
+
+#[tauri::command]
+pub async fn github_pr_ready(
+    directory: String,
+    number: u64,
+    _state: State<'_, DesktopRuntime>,
+) -> Result<GitHubPullRequestReadyResult, String> {
+    let directory = directory.trim().to_string();
+    if directory.is_empty() {
+        return Err("directory is required".to_string());
+    }
+    if number == 0 {
+        return Err("number is required".to_string());
+    }
+
+    let stored = read_auth_file().await;
+    let Some(stored) = stored else {
+        return Err("GitHub not connected".to_string());
+    };
+    if stored.access_token.trim().is_empty() {
+        let _ = clear_auth_file().await;
+        return Err("GitHub not connected".to_string());
+    }
+
+    let repo = resolve_repo_from_directory(&directory)
+        .await
+        .ok_or_else(|| "Unable to resolve GitHub repo from git remote".to_string())?;
+
+    let pr_url = format!(
+        "{}/{}/{}/pulls/{}",
+        API_PULLS_URL_PREFIX, repo.owner, repo.repo, number
+    );
+    let pr = github_get_json::<PullDetailsResponse>(&pr_url, &stored.access_token).await?;
+    let node_id = pr
+        .node_id
+        .ok_or_else(|| "Failed to resolve PR node id".to_string())?;
+
+    if !pr.draft {
+        return Ok(GitHubPullRequestReadyResult { ready: true });
+    }
+
+    let query = "mutation($pullRequestId: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $pullRequestId }) { pullRequest { id isDraft } } }";
+    let payload = serde_json::json!({
+        "query": query,
+        "variables": { "pullRequestId": node_id }
+    });
+
+    let client = reqwest::Client::new();
+    let resp = client
+        .post(API_GRAPHQL_URL)
+        .header("Accept", "application/vnd.github+json")
+        .header("Authorization", format!("Bearer {}", stored.access_token))
+        .header("User-Agent", "OpenChamber")
+        .json(&payload)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
+
+    if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+        let _ = clear_auth_file().await;
+        return Err("GitHub token expired or revoked".to_string());
+    }
+    if resp.status() == reqwest::StatusCode::FORBIDDEN {
+        return Err("Not authorized to mark PR ready".to_string());
+    }
+    if !resp.status().is_success() {
+        return Err(format!("GitHub request failed: {}", resp.status()));
+    }
+
+    let body: serde_json::Value = resp.json().await.map_err(|e| e.to_string())?;
+    if body.get("errors").is_some() {
+        return Err("GitHub GraphQL error".to_string());
+    }
+
+    Ok(GitHubPullRequestReadyResult { ready: true })
 }

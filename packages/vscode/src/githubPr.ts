@@ -283,3 +283,56 @@ export const mergePullRequest = async (
   }
   return { merged: Boolean(json.merged), message: readString(json.message) || undefined };
 };
+
+export const markPullRequestReady = async (
+  accessToken: string,
+  directory: string,
+  number: number,
+): Promise<{ ready: boolean }> => {
+  const repo = await resolveRepoFromDirectory(directory);
+  if (!repo) {
+    throw new Error('Unable to resolve GitHub repo from git remote');
+  }
+
+  const prResp = await githubFetch(`${API_BASE}/repos/${repo.owner}/${repo.repo}/pulls/${number}`, accessToken);
+  if (prResp.status === 401) {
+    return { ready: false };
+  }
+  const prJson = await jsonOrNull<JsonRecord>(prResp);
+  const nodeId = typeof prJson?.node_id === 'string' ? prJson.node_id : '';
+  const isDraft = Boolean((prJson as Record<string, unknown> | null)?.draft);
+  if (!prResp.ok || !nodeId) {
+    throw new Error('Failed to resolve PR node id');
+  }
+
+  if (!isDraft) {
+    return { ready: true };
+  }
+
+  const resp = await githubFetch(`${API_BASE}/graphql`, accessToken, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query:
+        'mutation($pullRequestId: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $pullRequestId }) { pullRequest { id isDraft } } }',
+      variables: { pullRequestId: nodeId },
+    }),
+  });
+
+  if (resp.status === 403) {
+    throw new Error('Not authorized to mark PR ready');
+  }
+  if (resp.status === 401) {
+    const error = new Error('unauthorized');
+    (error as unknown as { status?: number }).status = 401;
+    throw error;
+  }
+  const json = await jsonOrNull<JsonRecord>(resp);
+  if (!resp.ok || !json) {
+    throw new Error('Failed to mark PR ready');
+  }
+  if (json.errors) {
+    throw new Error('GitHub GraphQL error');
+  }
+  return { ready: true };
+};

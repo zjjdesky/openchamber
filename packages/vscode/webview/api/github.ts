@@ -5,6 +5,8 @@ import type {
   GitHubPullRequestCreateInput,
   GitHubPullRequestMergeInput,
   GitHubPullRequestMergeResult,
+  GitHubPullRequestReadyInput,
+  GitHubPullRequestReadyResult,
   GitHubPullRequestStatus,
   GitHubDeviceFlowComplete,
   GitHubDeviceFlowStart,
@@ -27,4 +29,6 @@ export const createVSCodeGitHubAPI = (): GitHubAPI => ({
     sendBridgeMessage<GitHubPullRequest>('api:github/pr:create', payload),
   prMerge: async (payload: GitHubPullRequestMergeInput) =>
     sendBridgeMessage<GitHubPullRequestMergeResult>('api:github/pr:merge', payload),
+  prReady: async (payload: GitHubPullRequestReadyInput) =>
+    sendBridgeMessage<GitHubPullRequestReadyResult>('api:github/pr:ready', payload),
 });
