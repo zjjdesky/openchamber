@@ -1193,6 +1193,61 @@ const isAnyUiVisible = () => globalVisibilityState === true;
 
 const isUiVisible = (token) => uiVisibilityByToken.get(token)?.visible === true;
 
+// Session activity tracking (mirrors desktop session_activity.rs)
+const sessionActivityPhases = new Map(); // sessionId -> { phase: 'idle'|'busy'|'cooldown', updatedAt: number }
+const sessionActivityCooldowns = new Map(); // sessionId -> timeoutId
+const SESSION_COOLDOWN_DURATION_MS = 2000;
+
+const setSessionActivityPhase = (sessionId, phase) => {
+  if (!sessionId || typeof sessionId !== 'string') return;
+  
+  // Cancel existing cooldown timer
+  const existingTimer = sessionActivityCooldowns.get(sessionId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    sessionActivityCooldowns.delete(sessionId);
+  }
+  
+  const current = sessionActivityPhases.get(sessionId);
+  if (current?.phase === phase) return; // No change
+  
+  sessionActivityPhases.set(sessionId, { phase, updatedAt: Date.now() });
+  
+  // Schedule transition from cooldown to idle
+  if (phase === 'cooldown') {
+    const timer = setTimeout(() => {
+      const now = sessionActivityPhases.get(sessionId);
+      if (now?.phase === 'cooldown') {
+        sessionActivityPhases.set(sessionId, { phase: 'idle', updatedAt: Date.now() });
+      }
+      sessionActivityCooldowns.delete(sessionId);
+    }, SESSION_COOLDOWN_DURATION_MS);
+    sessionActivityCooldowns.set(sessionId, timer);
+  }
+};
+
+const getSessionActivitySnapshot = () => {
+  const result = {};
+  for (const [sessionId, data] of sessionActivityPhases) {
+    result[sessionId] = { type: data.phase };
+  }
+  return result;
+};
+
+const resetAllSessionActivityToIdle = () => {
+  // Cancel all cooldown timers
+  for (const timer of sessionActivityCooldowns.values()) {
+    clearTimeout(timer);
+  }
+  sessionActivityCooldowns.clear();
+  
+  // Reset all phases to idle
+  const now = Date.now();
+  for (const [sessionId] of sessionActivityPhases) {
+    sessionActivityPhases.set(sessionId, { phase: 'idle', updatedAt: now });
+  }
+};
+
 const resolveVapidSubject = async () => {
   const configured = process.env.OPENCHAMBER_VAPID_SUBJECT;
   if (typeof configured === 'string' && configured.trim().length > 0) {
