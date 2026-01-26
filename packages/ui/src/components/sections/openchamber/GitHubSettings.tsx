@@ -2,6 +2,7 @@ import React from 'react';
 import { Button } from '@/components/ui/button';
 import { toast } from 'sonner';
 import { getRegisteredRuntimeAPIs } from '@/contexts/runtimeAPIRegistry';
+import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { RiGithubFill } from '@remixicon/react';
 
 type GitHubUser = {
@@ -10,13 +11,6 @@ type GitHubUser = {
   avatarUrl?: string;
   name?: string;
   email?: string;
-};
-
-type AuthStatusResponse = {
-  connected: boolean;
-  user?: GitHubUser | null;
-  scope?: string;
-  error?: string;
 };
 
 type DeviceFlowStartResponse = {
@@ -35,6 +29,11 @@ type DeviceFlowCompleteResponse =
 
 export const GitHubSettings: React.FC = () => {
   const runtimeGitHub = getRegisteredRuntimeAPIs()?.github;
+  const status = useGitHubAuthStore((state) => state.status);
+  const isLoading = useGitHubAuthStore((state) => state.isLoading);
+  const hasChecked = useGitHubAuthStore((state) => state.hasChecked);
+  const refreshStatus = useGitHubAuthStore((state) => state.refreshStatus);
+  const setStatus = useGitHubAuthStore((state) => state.setStatus);
 
   const openExternal = React.useCallback(async (url: string) => {
     if (typeof window === 'undefined') {
@@ -60,9 +59,7 @@ export const GitHubSettings: React.FC = () => {
     }
   }, []);
 
-  const [isLoading, setIsLoading] = React.useState(true);
   const [isBusy, setIsBusy] = React.useState(false);
-  const [status, setStatus] = React.useState<AuthStatusResponse | null>(null);
   const [flow, setFlow] = React.useState<DeviceFlowStartResponse | null>(null);
   const [pollIntervalMs, setPollIntervalMs] = React.useState<number | null>(null);
   const pollTimerRef = React.useRef<number | null>(null);
@@ -75,41 +72,20 @@ export const GitHubSettings: React.FC = () => {
     setPollIntervalMs(null);
   }, []);
 
-  const refreshStatus = React.useCallback(async () => {
-    if (runtimeGitHub) {
-      const payload = await runtimeGitHub.authStatus();
-      setStatus(payload as AuthStatusResponse);
-      return payload as AuthStatusResponse;
-    }
-
-    const response = await fetch('/api/github/auth/status', {
-      method: 'GET',
-      headers: { Accept: 'application/json' },
-    });
-    const payload = (await response.json().catch(() => null)) as AuthStatusResponse | null;
-    if (!response.ok || !payload) {
-      throw new Error(payload?.error || response.statusText || 'Failed to load GitHub status');
-    }
-    setStatus(payload);
-    return payload;
-  }, [runtimeGitHub]);
-
   React.useEffect(() => {
-    let mounted = true;
     (async () => {
       try {
-        await refreshStatus();
+        if (!hasChecked) {
+          await refreshStatus(runtimeGitHub);
+        }
       } catch (error) {
         console.warn('Failed to load GitHub auth status:', error);
-      } finally {
-        if (mounted) setIsLoading(false);
       }
     })();
     return () => {
-      mounted = false;
       stopPolling();
     };
-  }, [refreshStatus, stopPolling]);
+  }, [hasChecked, refreshStatus, runtimeGitHub, stopPolling]);
 
   const startConnect = React.useCallback(async () => {
     setIsBusy(true);
@@ -178,13 +154,13 @@ export const GitHubSettings: React.FC = () => {
       void (async () => {
         try {
           const result = await pollOnce(flow.deviceCode);
-          if (result.connected) {
-            toast.success('GitHub connected');
-            setFlow(null);
-            stopPolling();
-            await refreshStatus();
-            return;
-          }
+            if (result.connected) {
+              toast.success('GitHub connected');
+              setFlow(null);
+              stopPolling();
+              await refreshStatus(runtimeGitHub, { force: true });
+              return;
+            }
 
           if (result.status === 'slow_down') {
             setPollIntervalMs((prev) => (prev ? prev + 5000 : 5000));
@@ -207,7 +183,7 @@ export const GitHubSettings: React.FC = () => {
         pollTimerRef.current = null;
       }
     };
-  }, [flow, pollIntervalMs, pollOnce, refreshStatus, stopPolling]);
+  }, [flow, pollIntervalMs, pollOnce, refreshStatus, runtimeGitHub, stopPolling]);
 
   const disconnect = React.useCallback(async () => {
     setIsBusy(true);
@@ -226,14 +202,14 @@ export const GitHubSettings: React.FC = () => {
         }
       }
       toast.success('GitHub disconnected');
-      await refreshStatus();
+      setStatus({ connected: false, user: null });
     } catch (error) {
       console.error('Failed to disconnect GitHub:', error);
       toast.error('Failed to disconnect GitHub');
     } finally {
       setIsBusy(false);
     }
-  }, [refreshStatus, stopPolling, runtimeGitHub]);
+  }, [setStatus, stopPolling, runtimeGitHub]);
 
   if (isLoading) {
     return null;

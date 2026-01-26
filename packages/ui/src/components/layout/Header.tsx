@@ -5,12 +5,13 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 
-import { RiArrowLeftSLine, RiChat4Line, RiCodeLine, RiCommandLine, RiFileTextLine, RiFolder6Line, RiGitBranchLine, RiLayoutLeftLine, RiPlayListAddLine, RiQuestionLine, RiSettings3Line, RiTerminalBoxLine, type RemixiconComponentType } from '@remixicon/react';
+import { RiArrowLeftSLine, RiChat4Line, RiCodeLine, RiCommandLine, RiFileTextLine, RiFolder6Line, RiGitBranchLine, RiGithubFill, RiLayoutLeftLine, RiPlayListAddLine, RiQuestionLine, RiSettings3Line, RiTerminalBoxLine, type RemixiconComponentType } from '@remixicon/react';
 import { useUIStore, type MainTab } from '@/stores/useUIStore';
 import { useUpdateStore } from '@/stores/useUpdateStore';
 import { useConfigStore } from '@/stores/useConfigStore';
 import { useSessionStore } from '@/stores/useSessionStore';
 import { useDirectoryStore } from '@/stores/useDirectoryStore';
+import { useGitHubAuthStore } from '@/stores/useGitHubAuthStore';
 import { useRuntimeAPIs } from '@/hooks/useRuntimeAPIs';
 import { ContextUsageDisplay } from '@/components/ui/ContextUsageDisplay';
 import { useDeviceInfo } from '@/lib/device';
@@ -78,6 +79,7 @@ export const Header: React.FC = () => {
   const { isMobile } = useDeviceInfo();
   const diffFileCount = useDiffFileCount();
   const updateAvailable = useUpdateStore((state) => state.available);
+  const githubAuthStatus = useGitHubAuthStore((state) => state.status);
 
   const headerRef = React.useRef<HTMLElement | null>(null);
 
@@ -111,6 +113,8 @@ export const Header: React.FC = () => {
   const outputLimit = (limit && typeof limit.output === 'number' ? limit.output : 0);
   const contextUsage = getContextUsage(contextLimit, outputLimit);
   const isSessionSwitcherOpen = useUIStore((state) => state.isSessionSwitcherOpen);
+  const githubAvatarUrl = githubAuthStatus?.connected ? githubAuthStatus.user?.avatarUrl : null;
+  const githubLogin = githubAuthStatus?.connected ? githubAuthStatus.user?.login : null;
 
   const currentSession = React.useMemo(() => {
     if (!currentSessionId) return null;
@@ -469,6 +473,24 @@ export const Header: React.FC = () => {
             <p>Keyboard Shortcuts ({getModifierLabel()}+.)</p>
           </TooltipContent>
         </Tooltip>
+        {githubAuthStatus?.connected ? (
+          <div
+            className="app-region-no-drag flex h-8 w-8 items-center justify-center overflow-hidden rounded-full border border-border/60 bg-muted/80"
+            title={githubLogin ? `GitHub: ${githubLogin}` : 'GitHub connected'}
+          >
+            {githubAvatarUrl ? (
+              <img
+                src={githubAvatarUrl}
+                alt={githubLogin ? `${githubLogin} avatar` : 'GitHub avatar'}
+                className="h-full w-full object-cover"
+                loading="lazy"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <RiGithubFill className="h-4 w-4 text-muted-foreground" />
+            )}
+          </div>
+        ) : null}
       </div>
     </div>
   );
